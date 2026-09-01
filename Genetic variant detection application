@@ -1,0 +1,307 @@
+import streamlit as st
+import pandas as pd
+import joblib
+from pathlib import Path
+
+# ---------------------------------------------------------
+# GENETIC VARIANT RISK DETECTOR
+# Educational ML prototype — NOT a medical diagnostic tool
+# ---------------------------------------------------------
+
+st.set_page_config(
+    page_title="Genetic Variant Risk Detector",
+    page_icon="🧬",
+    layout="wide"
+)
+
+MODEL_PATH = Path("models/variant_classifier.joblib")
+
+# -------------------- HEADER --------------------
+
+st.title("🧬 Genetic Variant Risk Detector")
+st.markdown(
+    """
+    ### AI-powered genetic variant risk analysis
+
+    Enter characteristics of a genetic variant and the machine-learning
+    model will estimate whether the variant resembles a **higher-risk
+    genetic pattern**.
+    """
+)
+
+st.warning(
+    "⚠️ EDUCATIONAL PROTOTYPE: This application does not diagnose genetic "
+    "diseases and must not be used for medical decisions. Clinical genetic "
+    "interpretation requires validated laboratory data and qualified "
+    "medical/genetics professionals."
+)
+
+# -------------------- LOAD MODEL --------------------
+
+if not MODEL_PATH.exists():
+    st.error(
+        "Model not found. Please run `python train.py` before starting the app."
+    )
+    st.stop()
+
+bundle = joblib.load(MODEL_PATH)
+model = bundle["model"]
+
+# -------------------- DATA OPTIONS --------------------
+
+GENES = [
+    "BRCA1",
+    "BRCA2",
+    "CFTR",
+    "HBB",
+    "LDLR",
+    "TP53",
+    "PAH",
+    "FBN1",
+    "MECP2",
+    "DMD",
+    "SCN1A",
+    "MLH1"
+]
+
+CONSEQUENCES = [
+    "missense",
+    "nonsense",
+    "frameshift",
+    "splice_site",
+    "synonymous"
+]
+
+VARIANT_TYPES = [
+    "SNV",
+    "insertion",
+    "deletion"
+]
+
+# -------------------- SIDEBAR --------------------
+
+st.sidebar.header("🧬 Variant Information")
+
+gene = st.sidebar.selectbox(
+    "Gene",
+    GENES
+)
+
+consequence = st.sidebar.selectbox(
+    "Molecular consequence",
+    CONSEQUENCES
+)
+
+variant_type = st.sidebar.selectbox(
+    "Variant type",
+    VARIANT_TYPES
+)
+
+allele_frequency = st.sidebar.number_input(
+    "Population allele frequency",
+    min_value=0.0,
+    max_value=1.0,
+    value=0.001,
+    step=0.0001,
+    format="%.6f"
+)
+
+conservation = st.sidebar.slider(
+    "Conservation score",
+    min_value=0.0,
+    max_value=1.0,
+    value=0.80,
+    step=0.01
+)
+
+functional_score = st.sidebar.slider(
+    "Functional-impact score",
+    min_value=0.0,
+    max_value=1.0,
+    value=0.70,
+    step=0.01
+)
+
+family_history = st.sidebar.selectbox(
+    "Reported family history",
+    ["unknown", "no", "yes"]
+)
+
+# -------------------- MAIN INPUT DISPLAY --------------------
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Variant")
+
+    st.write(f"**Gene:** {gene}")
+    st.write(f"**Consequence:** {consequence}")
+    st.write(f"**Variant type:** {variant_type}")
+
+with col2:
+    st.subheader("Additional Features")
+
+    st.write(f"**Allele frequency:** {allele_frequency:.6f}")
+    st.write(f"**Conservation:** {conservation:.2f}")
+    st.write(f"**Functional impact:** {functional_score:.2f}")
+    st.write(f"**Family history:** {family_history}")
+
+# -------------------- PREDICTION --------------------
+
+st.divider()
+
+if st.button(
+    "🔬 Analyze Genetic Variant",
+    type="primary",
+    use_container_width=True
+):
+
+    input_data = pd.DataFrame([{
+        "gene": gene,
+        "consequence": consequence,
+        "variant_type": variant_type,
+        "allele_frequency": allele_frequency,
+        "conservation": conservation,
+        "functional_score": functional_score,
+        "family_history": family_history
+    }])
+
+    probability = float(
+        model.predict_proba(input_data)[0][1]
+    )
+
+    prediction = int(
+        model.predict(input_data)[0]
+    )
+
+    # -------------------- RESULTS --------------------
+
+    st.subheader("🧪 Analysis Result")
+
+    result_col1, result_col2, result_col3 = st.columns(3)
+
+    with result_col1:
+        if prediction == 1:
+            st.error("Higher-risk pattern")
+        else:
+            st.success("Lower-risk pattern")
+
+    with result_col2:
+        st.metric(
+            "Model Probability",
+            f"{probability * 100:.1f}%"
+        )
+
+    with result_col3:
+        st.metric(
+            "Gene",
+            gene
+        )
+
+    # -------------------- PROBABILITY BAR --------------------
+
+    st.progress(
+        min(max(probability, 0.0), 1.0)
+    )
+
+    # -------------------- MODEL EXPLANATION --------------------
+
+    st.subheader("🔎 Feature Interpretation")
+
+    explanations = []
+
+    if consequence in [
+        "nonsense",
+        "frameshift",
+        "splice_site"
+    ]:
+        explanations.append(
+            "The selected molecular consequence can substantially affect "
+            "the resulting gene product."
+        )
+
+    if consequence == "missense":
+        explanations.append(
+            "A missense variant changes an amino acid and may or may not "
+            "affect protein function depending on the specific variant."
+        )
+
+    if consequence == "synonymous":
+        explanations.append(
+            "A synonymous variant does not directly change the encoded "
+            "amino acid, although some synonymous variants can still affect "
+            "gene regulation or splicing."
+        )
+
+    if conservation >= 0.75:
+        explanations.append(
+            "The selected conservation score is relatively high."
+        )
+
+    if functional_score >= 0.70:
+        explanations.append(
+            "The selected functional-impact score is relatively high."
+        )
+
+    if allele_frequency <= 0.001:
+        explanations.append(
+            "The selected population frequency is rare in this demonstration."
+        )
+
+    if family_history == "yes":
+        explanations.append(
+            "Reported family history is associated with a higher model score "
+            "in the demonstration dataset."
+        )
+
+    if not explanations:
+        explanations.append(
+            "The selected features do not strongly match the higher-risk "
+            "pattern learned from the demonstration dataset."
+        )
+
+    for explanation in explanations:
+        st.write("•", explanation)
+
+    # -------------------- IMPORTANT DISCLAIMER --------------------
+
+    st.info(
+        """
+        **Important:** These explanations describe relationships learned by
+        the demonstration model. They are NOT proof that a variant causes
+        disease.
+
+        Real genetic interpretation requires evidence such as population
+        frequency, functional studies, segregation, phenotype, gene-disease
+        validity, and expert review.
+        """
+    )
+
+# -------------------- PROJECT INFORMATION --------------------
+
+st.divider()
+
+st.subheader("🧠 How the AI works")
+
+st.code(
+    """
+Genetic Variant
+      ↓
+Feature Collection
+      ↓
+Data Preprocessing
+      ↓
+Random Forest ML Model
+      ↓
+Probability Estimation
+      ↓
+Risk Pattern Classification
+      ↓
+Explanation
+""",
+    language="text"
+)
+
+st.caption(
+    "Genetic Variant Risk Detector • Machine Learning Research Prototype"
+)
